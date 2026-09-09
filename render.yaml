@@ -1,0 +1,22 @@
+# insightmetric (public) — the UI only. It computes nothing; it calls the API.
+services:
+  - type: web
+    name: insightmetric
+    runtime: python
+    plan: free
+    region: frankfurt
+    branch: main
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run Daily_Trends.py --server.port $PORT --server.address 0.0.0.0 --server.headless true
+    healthCheckPath: /_stcore/health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: API_URL
+        value: https://insightmetric-api.onrender.com    # <- your core service URL
+      - key: STREAMLIT_BROWSER_GATHER_USAGE_STATS
+        value: "false"
+      # Only if the core sets INSIGHTMETRIC_API_KEY
+      - key: API_KEY
+        sync: false
