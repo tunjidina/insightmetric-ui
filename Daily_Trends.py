@@ -19,7 +19,7 @@ api.sidebar_status()
 
 st.title("Daily Trends")
 st.caption("**Tech Trends, Minus the Noise.**")
-st.caption("Topics moving across technology today, with an estimate of which ones return tomorrow.")
+st.caption("Topics moving across technology today" + (", with an estimate of which ones return tomorrow." if api.predictions_on() else "."))
 
 # --- controls -----------------------------------------------------------------
 config = api.load(api.settings)

@@ -16,6 +16,7 @@ Optional API_KEY (same two sources) is sent as X-API-Key when the core requires 
 from __future__ import annotations
 
 import os
+from datetime import date
 
 import requests
 import streamlit as st
@@ -23,6 +24,7 @@ import streamlit as st
 DEFAULT_URL = "http://localhost:8000"
 TIMEOUT = 20          # seconds; a cold free-tier instance can take a while to wake
 CACHE_TTL = 300       # the data changes once a day, so five minutes is generous
+STALE_AFTER_DAYS = 2  # same threshold the API's /health uses for "collection has stopped"
 
 
 def _config(name: str, default: str | None = None) -> str | None:
@@ -156,8 +158,61 @@ def load(fn, *args, **kwargs):
             return None
 
 
+def _day(iso: str | None) -> str:
+    return date.fromisoformat(iso).strftime("%d %b %Y") if iso else "—"
+
+
+def _plural(n: int, word: str) -> str:
+    return f"{n} {word}{'' if n == 1 else 's'}"
+
+
+def data_notice(h: dict) -> None:
+    """A plain statement of what the data is, on every page. Warnings are not collapsible and
+    not dismissible: sample data must not be mistaken for news, and old data for current."""
+    days_old, newest = h.get("days_since_latest"), h.get("latest_date")
+    if days_old is not None and days_old >= STALE_AFTER_DAYS:
+        st.warning(f"**Stale data.** The newest data is from {_day(newest)}, {_plural(days_old, 'day')} ago. "
+                   "The daily collection may have stopped, so none of this is current.")
+
+    pred = h.get("predictions")
+    if pred and not pred["available"]:
+        st.info(f"**Predictions are off.** {pred['reason']}")
+
+    q = h.get("data_quality")
+    if q is None:
+        st.warning("**Data origin unknown.** This API does not say whether its data is real or sample data.")
+        return
+    s, u, live = q["synthetic_days"], q["unverified_days"], q["live_days"]
+    if not q["recorded"]:
+        st.warning("**Data origin unknown.** The data carries no provenance record, "
+                   "so none of it can be confirmed as real.")
+    elif s:
+        parts = [f"**Sample data.** {s} of {s + u + live} days (through {_day(q['synthetic_through'])}) are "
+                 "synthetic: generated for development, not collected from news."]
+        if u:
+            parts.append(f"{_plural(u, 'day')} of unverified origin.")
+        parts.append(f"{_plural(live, 'day')} collected from live feeds." if live else "No live data yet.")
+        if q["latest_provenance"] != "live":
+            parts.append("The newest day is not a live collection.")
+        parts.append("Topics, charts and predictions for sample days do not describe real news.")
+        st.warning(" ".join(parts))
+    elif u:
+        st.info(f"**Unverified data.** {_plural(u, 'day')} of unverified origin; "
+                f"{_plural(live, 'day')} collected from live feeds.")
+    else:
+        st.caption(f"All {_plural(live, 'day')} were collected from live feeds.")
+
+
+def predictions_on() -> bool:
+    """True only when the API says its predictions can be trusted. Unknown counts as off."""
+    try:
+        return bool((health().get("predictions") or {}).get("available"))
+    except APIError:
+        return False
+
+
 def sidebar_status() -> None:
-    """A small freshness line in the sidebar. Never blocks the page if it fails."""
+    """A small freshness line in the sidebar, then the data notice. Never blocks the page if it fails."""
     try:
         h = health()
     except APIError:
@@ -169,3 +224,4 @@ def sidebar_status() -> None:
         f"{icon} Data to {h.get('latest_date', '—')}"
         + (" · today" if fresh == 0 else f" · {fresh}d ago" if fresh else "")
     )
+    data_notice(h)
